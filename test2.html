@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WBS 시스템</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+
+        header {
+            background-color: #1a73e8;
+            color: white;
+            text-align: center;
+            padding: 1rem;
+        }
+
+        main {
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+        }
+
+        section {
+            margin-bottom: 2rem;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            padding: 1rem;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #1a73e8;
+        }
+
+        #task-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        #task-form input,
+        #task-form button {
+            flex: 1 1 200px;
+            padding: 0.5rem;
+        }
+
+        #task-form button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+
+        #task-tree {
+            list-style-type: none;
+            padding-left: 1rem;
+        }
+
+        #gantt-container {
+            position: relative;
+            height: 400px;
+            overflow-x: auto;
+            overflow-y: hidden;
+        }
+
+        .gantt-bar {
+            position: absolute;
+            height: 30px;
+            background-color: #1a73e8;
+            color: white;
+            text-align: center;
+            padding: 5px;
+            border-radius: 5px;
+            font-size: 12px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .gantt-date-header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background-color: #f1f3f4;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .gantt-date {
+            position: absolute;
+            width: 100px;
+            text-align: center;
+            font-size: 12px;
+        }
+
+        .gantt-row {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 40px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .gantt-row-label {
+            position: absolute;
+            left: 0;
+            width: 100px;
+            height: 100%;
+            background-color: #f1f3f4;
+            border-right: 1px solid #ccc;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            padding-left: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h1>WBS 시스템</h1>
+    </header>
+    <main>
+        <section id="input-section">
+            <h2>일정 입력</h2>
+            <form id="task-form">
+                <input type="text" id="task-name" placeholder="작업명" required>
+                <input type="text" id="task-parent" placeholder="상위 작업 (선택사항)">
+                <input type="date" id="task-start" required>
+                <input type="date" id="task-end" required>
+                <input type="text" id="task-assignee" placeholder="담당자" required>
+                <button type="submit">추가</button>
+            </form>
+        </section>
+        <section id="tree-structure">
+            <h2>작업 트리 구조</h2>
+            <ul id="task-tree"></ul>
+        </section>
+        <section id="gantt-chart">
+            <h2>간트 차트</h2>
+            <div id="gantt-container"></div>
+        </section>
+    </main>
+
+    <script>
+        // 초기 테스트 데이터
+        let tasks = [
+            { name: "프로젝트 계획", parent: "", start: "2023-05-01", end: "2023-05-10", assignee: "김철수" },
+            { name: "요구사항 분석", parent: "프로젝트 계획", start: "2023-05-11", end: "2023-05-20", assignee: "이영희" },
+            { name: "설계", parent: "프로젝트 계획", start: "2023-05-21", end: "2023-06-10", assignee: "박지성" },
+            { name: "UI 설계", parent: "설계", start: "2023-05-21", end: "2023-05-31", assignee: "최민수" },
+            { name: "DB 설계", parent: "설계", start: "2023-06-01", end: "2023-06-10", assignee: "정소연" },
+            { name: "개발", parent: "프로젝트 계획", start: "2023-06-11", end: "2023-07-20", assignee: "김철수" },
+            { name: "프론트엔드 개발", parent: "개발", start: "2023-06-11", end: "2023-07-10", assignee: "이영희" },
+            { name: "백엔드 개발", parent: "개발", start: "2023-06-21", end: "2023-07-20", assignee: "박지성" },
+            { name: "테스트", parent: "프로젝트 계획", start: "2023-07-21", end: "2023-08-10", assignee: "최민수" },
+            { name: "단위 테스트", parent: "테스트", start: "2023-07-21", end: "2023-07-31", assignee: "정소연" },
+            { name: "통합 테스트", parent: "테스트", start: "2023-08-01", end: "2023-08-10", assignee: "김철수" },
+            { name: "배포", parent: "프로젝트 계획", start: "2023-08-11", end: "2023-08-20", assignee: "이영희" }
+        ];
+
+        document.addEventListener('DOMContentLoaded', function () {
+            document.getElementById('task-form').addEventListener('submit', function (e) {
+                e.preventDefault();
+                addTask();
+            });
+
+            updateTreeView();
+            updateGanttChart();
+        });
+
+        function addTask() {
+            const name = document.getElementById('task-name').value;
+            const parent = document.getElementById('task-parent').value;
+            const start = document.getElementById('task-start').value;
+            const end = document.getElementById('task-end').value;
+            const assignee = document.getElementById('task-assignee').value;
+
+            const task = { name, parent, start, end, assignee };
+            tasks.push(task);
+
+            updateTreeView();
+            updateGanttChart();
+
+            document.getElementById('task-form').reset();
+        }
+
+        function updateTreeView() {
+            const treeElement = document.getElementById('task-tree');
+            treeElement.innerHTML = '';
+
+            const taskMap = new Map();
+            tasks.forEach(task => taskMap.set(task.name, { ...task, children: [] }));
+
+            const rootTasks = [];
+            taskMap.forEach(task => {
+                if (task.parent && taskMap.has(task.parent)) {
+                    taskMap.get(task.parent).children.push(task);
+                } else {
+                    rootTasks.push(task);
+                }
+            });
+
+            function renderTask(task) {
+                const li = document.createElement('li');
+                li.textContent = `${task.name} (${task.assignee})`;
+                if (task.children.length > 0) {
+                    const ul = document.createElement('ul');
+                    task.children.forEach(child => ul.appendChild(renderTask(child)));
+                    li.appendChild(ul);
+                }
+                return li;
+            }
+
+            rootTasks.forEach(task => treeElement.appendChild(renderTask(task)));
+        }
+
+        function updateGanttChart() {
+            const container = document.getElementById('gantt-container');
+            container.innerHTML = '';
+
+            const startDate = new Date(Math.min(...tasks.map(t => new Date(t.start))));
+            const endDate = new Date(Math.max(...tasks.map(t => new Date(t.end))));
+            const totalDays = (endDate - startDate) / (1000 * 60 * 60 * 24);
+
+            // 날짜 헤더 추가
+            const dateHeader = document.createElement('div');
+            dateHeader.className = 'gantt-date-header';
+            for (let i = 0; i <= totalDays; i++) {
+                const date = new Date(startDate.getTime() + i * 24 * 60 * 60 * 1000);
+                const dateElement = document.createElement('div');
+                dateElement.className = 'gantt-date';
+                dateElement.style.left = `${(i / totalDays) * 100}%`;
+                dateElement.textContent = `${date.getMonth() + 1}/${date.getDate()}`;
+                dateHeader.appendChild(dateElement);
+            }
+            container.appendChild(dateHeader);
+
+            // 담당자별로 작업 그룹화
+            const assignees = [...new Set(tasks.map(t => t.assignee))];
+            assignees.forEach((assignee, index) => {
+                const row = document.createElement('div');
+                row.className = 'gantt-row';
+                row.style.top = `${index * 40 + 30}px`;
+
+                const label = document.createElement('div');
+                label.className = 'gantt-row-label';
+                label.textContent = assignee;
+                row.appendChild(label);
+
+                const assigneeTasks = tasks.filter(t => t.assignee === assignee);
+                assigneeTasks.forEach(task => {
+                    const taskStart = new Date(task.start);
+                    const taskEnd = new Date(task.end);
+                    const left = ((taskStart - startDate) / (1000 * 60 * 60 * 24) / totalDays) * 100;
+                    const width = ((taskEnd - taskStart) / (1000 * 60 * 60 * 24) / totalDays) * 100;
+
+                    const bar = document.createElement('div');
+                    bar.className = 'gantt-bar';
+                    bar.style.left = `${left}%`;
+                    bar.style.width = `${width}%`;
+                    bar.style.top = '5px';
+                    bar.textContent = task.name;
+                    row.appendChild(bar);
+                });
+
+                container.appendChild(row);
+            });
+
+            container.style.height = `${assignees.length * 40 + 30}px`;
+        }
+    </script>
+</body>
+
+</html>
